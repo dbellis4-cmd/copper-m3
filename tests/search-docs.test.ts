@@ -7,6 +7,8 @@ import { copperTools } from "@/lib/copper/assistant/tools";
 import { getPassageIndex } from "@/lib/copper/passage-index";
 import {
   cosineSimilarity,
+  keywordScores,
+  keywordsOf,
   pageLink,
   rankPassages,
   searchDocs,
@@ -57,8 +59,12 @@ describe("ranking passages", () => {
     );
   });
 
-  it("returns the 5 closest passages, closest first, with title, page and link", () => {
-    const matches = rankPassages(errorCodes.embedding, passages);
+  it("returns the 5 best passages, best first, with title, page and link", () => {
+    // With no keyword in the question, the order is by meaning alone.
+    const matches = rankPassages(
+      { query: "what now", embedding: errorCodes.embedding },
+      passages,
+    );
     expect(matches).toHaveLength(TOP_K);
     expect(TOP_K).toBe(5);
     expect(matches[0]).toMatchObject({
@@ -66,11 +72,76 @@ describe("ranking passages", () => {
       page: errorCodes.page,
       link: `/docs/copper-home-user-guide.pdf#page=${errorCodes.page}`,
       score: 1,
+      keywords: [],
     });
     expect(matches[0].text).toContain("C-47");
     expect(matches[0].text.startsWith("Copper Home User Guide")).toBe(false);
     const scores = matches.map((m) => m.score);
     expect([...scores].sort((a, b) => b - a)).toEqual(scores);
+  });
+});
+
+describe("keyword search", () => {
+  it("keeps codes and hyphenated words whole and drops filler words", () => {
+    expect(keywordsOf("How do I reset the Wi-Fi? Error C-47!")).toEqual([
+      "reset",
+      "wi-fi",
+      "error",
+      "c-47",
+    ]);
+    expect(keywordsOf("refunds plus access")).toEqual([
+      "refund",
+      "plus",
+      "access",
+    ]);
+  });
+
+  it("doesn't list words found in most passages as matches", () => {
+    const matches = rankPassages(
+      { query: "reset Wi-Fi Copper Home", embedding: errorCodes.embedding },
+      passages,
+    );
+    for (const m of matches) {
+      expect(m.keywords).not.toContain("copper");
+      expect(m.keywords).not.toContain("home");
+    }
+    expect(matches.some((m) => m.keywords.includes("wi-fi"))).toBe(true);
+  });
+
+  it("scores only passages that contain the words, rare words highest", () => {
+    const scores = keywordScores("C-47", passages);
+    const withCode = passages.filter((p) => p.text.includes("C-47"));
+    passages.forEach((p, i) =>
+      expect(scores[i] > 0, p.id).toBe(withCode.includes(p)),
+    );
+  });
+
+  it("finds an exact code even when the meaning search points elsewhere", () => {
+    // Pretend Gemini embedded the question exactly like an unrelated Terms
+    // passage: by meaning alone, the C-47 passage wouldn't make the top 5.
+    const unrelated = passages.find(
+      (p) => p.docId === "copper-terms-and-conditions",
+    )!;
+    const byMeaningOnly = rankPassages(
+      { query: "what now", embedding: unrelated.embedding },
+      passages,
+    );
+    expect(byMeaningOnly.some((m) => m.text.includes("C-47"))).toBe(false);
+
+    // Only the C-47 passage contains the code, so it comes first...
+    const code = rankPassages(
+      { query: "C-47", embedding: unrelated.embedding },
+      passages,
+    );
+    expect(code[0].text).toContain("C-47");
+    expect(code[0].keywords).toEqual(["c-47"]);
+
+    // ...and stays in the top 5 when the question has other words too.
+    const sentence = rankPassages(
+      { query: "error C-47", embedding: unrelated.embedding },
+      passages,
+    );
+    expect(sentence.some((m) => m.keywords.includes("c-47"))).toBe(true);
   });
 });
 

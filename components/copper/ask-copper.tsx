@@ -544,20 +544,38 @@ function ToolOutput({ name, output }: { name: string; output: any }) {
               <span className="text-muted-foreground">· page {m.page}</span>
               <span
                 className="text-muted-foreground ml-auto font-mono text-[10px]"
-                title="How close this passage is to the question (0 to 1)"
+                title="How close this passage's meaning is to the question (0 to 1)"
               >
                 {Number(m.score).toFixed(2)}
               </span>
             </div>
             <p className="text-muted-foreground mt-1 line-clamp-2">{m.text}</p>
-            <a
-              href={m.link}
-              target="_blank"
-              rel="noreferrer"
-              className="text-accent mt-1 inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
-            >
-              Open page {m.page} <ExternalLinkIcon className="size-3" />
-            </a>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <a
+                href={m.link}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+              >
+                Open page {m.page} <ExternalLinkIcon className="size-3" />
+              </a>
+              {Array.isArray(m.keywords) && m.keywords.length > 0 && (
+                <span
+                  className="text-muted-foreground ml-auto flex items-center gap-1"
+                  title="Words from the question found in this passage"
+                >
+                  matched
+                  {m.keywords.map((w: string) => (
+                    <Pill
+                      key={w}
+                      className="bg-accent/15 text-accent font-mono"
+                    >
+                      {w}
+                    </Pill>
+                  ))}
+                </span>
+              )}
+            </div>
           </li>
         ))}
       </ol>

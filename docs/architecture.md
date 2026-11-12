@@ -112,9 +112,9 @@ meaning), so Ask Copper can later find the passages that answer a question.
 | Loader | `lib/copper/passage-index.ts`, `instrumentation.ts` | `getPassageIndex()` returns the passages from memory; `register()` loads them once when the server starts and logs `[passages] loaded N passages` |
 | AI calls | `callEmbedMany` in `lib/ai/call.ts`, `{ module: 3, feature: "embed-docs" }` | `gemini-embedding-001` at 768 dimensions, task `RETRIEVAL_DOCUMENT`. Run once per PDF change, not per question: about 7,500 input tokens for all four PDFs, about a tenth of a cent |
 
-| Search | `lib/copper/search.ts` | `searchDocs(query)`: embeds the question (task `RETRIEVAL_QUERY`), compares it with every passage by cosine similarity and returns the 5 closest with `title`, `page`, `link` (`/docs/<file>.pdf#page=N`), `score` and `text` |
+| Search | `lib/copper/search.ts` | `searchDocs(query)`: hybrid search. Ranks every passage two ways, by meaning (cosine similarity between the question's embedding, task `RETRIEVAL_QUERY`, and each passage's) and by keywords (BM25 over the passage words, keeping codes like `c-47` whole), then merges the two rankings with reciprocal rank fusion (k = 60). Returns the top 5 with `title`, `page`, `link` (`/docs/<file>.pdf#page=N`), `score` (meaning, 0 to 1), `keywords` (question words found in the passage) and `text` |
 | Tool | `search_docs` in `lib/copper/assistant/tools.ts` | Ask Copper's fifth tool. The instructions send setup, troubleshooting, error-code, warranty, refund, subscription, privacy and policy questions to it, and tell Copper to answer only from the passages and name the document and page |
-| Tool card | `ToolOutput` in `components/copper/ask-copper.tsx` | Lists the 5 passages: title, page, score, a two-line excerpt and an "Open page N" link |
+| Tool card | `ToolOutput` in `components/copper/ask-copper.tsx` | Lists the 5 passages: title, page, score, a two-line excerpt, an "Open page N" link and the matched words (words found in more than a third of passages, like "copper", aren't listed) |
 | AI calls (search) | `{ module: 3, feature: "search-docs" }` | One embedding call per search (a few tokens), plus the usual `ask-copper` call |
 
 **Data flow:** `npm run embed-docs` → PDFs → passages → Gemini embeddings →
@@ -132,12 +132,18 @@ At question time: question → Ask Copper → `search_docs` → embed the questi
 - **768 dimensions instead of 3072.** Google's own guidance is that the
   smaller size loses very little quality; the file is about a quarter of the
   size.
+- **Hybrid search, merged by rank.** Keyword scores and cosine scores are on
+  different scales, so they're combined by position in each list (reciprocal
+  rank fusion) rather than by adding the numbers. No weights to tune.
 - **The title starts every passage.** "The warranty is 2 years" only makes
   sense if the embedding knows it's from the Copper Home guide.
 
 **Risks and open questions:** if a PDF changes and nobody re-runs
 `npm run embed-docs`, answers come from the old text. A passage can split a
 FAQ question from its answer when a page break falls between them. Embeddings match
-meaning, not exact words, so short codes like "C-47" score only a little
-above unrelated passages; adding keyword matching would make code lookups
-more reliable.
+meaning, not exact words, so on their own they barely separate a code like
+"C-47" from unrelated passages (0.60 against 0.57). Keyword matching fixes
+that: only one passage contains "c-47", so it leads both rankings. The
+trade-off is that a common word in the question (like "reset") can lift a
+passage that shares the word but not the meaning; fusion keeps it to a nudge
+rather than an override.
