@@ -36,6 +36,7 @@ import {
   TOOL_LABELS,
 } from "@/lib/copper/assistant/progress";
 import { formatUsd, getPlans, getProducts } from "@/lib/copper/catalog";
+import { splitCitations } from "@/lib/copper/citations";
 import { cn } from "@/lib/utils";
 
 const STARTERS = [
@@ -386,7 +387,7 @@ function Answer({
             </div>
           )}
           <p className="text-sm whitespace-pre-wrap">
-            {reply}
+            <ReplyText text={reply} />
             {working && (
               <span className="bg-primary ml-0.5 inline-block h-4 w-0.5 animate-pulse align-middle" />
             )}
@@ -423,6 +424,30 @@ function Station({
       </p>
       {children}
     </section>
+  );
+}
+
+/**
+ * Copper's reply, with each citation like [Copper Home User Guide, p. 9]
+ * turned into a link that opens that PDF at that page.
+ */
+function ReplyText({ text }: { text: string }) {
+  return splitCitations(text).map((part, i) =>
+    typeof part === "string" ? (
+      part
+    ) : (
+      <a
+        key={i}
+        href={part.href}
+        target="_blank"
+        rel="noreferrer"
+        data-testid="citation"
+        title={`Open ${part.title} at page ${part.page}`}
+        className="text-accent font-medium underline-offset-2 hover:underline"
+      >
+        {part.label}
+      </a>
+    ),
   );
 }
 
