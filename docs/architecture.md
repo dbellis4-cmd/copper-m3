@@ -96,3 +96,38 @@ each step. Module 3 teaches it to answer from the customer documents.
 | Instructions | `lib/copper/assistant/instructions.ts` | `COPPER_INSTRUCTIONS`. Copper says it can't help yet with warranty, setup, troubleshooting or privacy |
 | Data | `lib/copper/inventory.ts`, `lib/copper/documents.ts` | Stock from `lib/copper/data/inventory.json`; `DOCUMENTS`: the four customer documents and their PDF paths under `public/docs/`. The PDFs are added in class |
 | AI calls | `{ module: 2, feature: "ask-copper" }` | One streamed call per question |
+
+## Module 3: Document passages and embeddings
+
+**Summary:** The four customer PDFs are split into short passages and each
+passage is turned into an embedding (a list of numbers that captures its
+meaning), so Ask Copper can later find the passages that answer a question.
+
+| Piece | Where | What it does |
+|---|---|---|
+| PDFs | `public/docs/*.pdf` | The customer documents listed in `DOCUMENTS` |
+| Splitter | `lib/copper/passages.ts` | Drops each page's header lines, rejoins wrapped lines, splits into sentences (list items, steps and headings count as one each) and groups about 3 sentences per passage. Every passage keeps its `title` and `page`, and its `text` starts with `"<title>: "` |
+| Script | `scripts/embed-docs.mts` (`npm run embed-docs`) | Reads the PDFs with `unpdf`, splits them, embeds every passage and writes the data file. `-- --dry-run` splits and counts without calling Gemini |
+| Data | `lib/copper/data/passages.json` | `{ model, dimensions, createdAt, passages: [{ id, docId, title, page, text, embedding }] }`, one passage per line |
+| Loader | `lib/copper/passage-index.ts`, `instrumentation.ts` | `getPassageIndex()` returns the passages from memory; `register()` loads them once when the server starts and logs `[passages] loaded N passages` |
+| AI calls | `callEmbedMany` in `lib/ai/call.ts`, `{ module: 3, feature: "embed-docs" }` | `gemini-embedding-001` at 768 dimensions, task `RETRIEVAL_DOCUMENT`. Run once per PDF change, not per question: about 7,500 input tokens for all four PDFs, about a tenth of a cent |
+
+**Data flow:** `npm run embed-docs` → PDFs → passages → Gemini embeddings →
+`passages.json` (committed) → loaded into memory when the server starts.
+
+**Decisions and trade-offs:**
+- **A JSON file in memory, not a database.** About 100 passages fit easily in
+  memory and searching them takes microseconds. A vector database (such as
+  Supabase with pgvector) is worth it at thousands of passages or when
+  documents change often.
+- **Embeddings are made ahead of time, not when the app starts.** Starting
+  stays fast and free, and a deploy doesn't need to call Gemini.
+- **768 dimensions instead of 3072.** Google's own guidance is that the
+  smaller size loses very little quality; the file is about a quarter of the
+  size.
+- **The title starts every passage.** "The warranty is 2 years" only makes
+  sense if the embedding knows it's from the Copper Home guide.
+
+**Risks and open questions:** if a PDF changes and nobody re-runs
+`npm run embed-docs`, answers come from the old text. A passage can split a
+FAQ question from its answer when a page break falls between them.

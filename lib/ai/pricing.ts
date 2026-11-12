@@ -15,3 +15,11 @@ export function costUsd(
   const price = PRICING[model];
   return (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
 }
+
+// Embeddings are priced on input tokens only: gemini-embedding-001's list
+// price as of 2026-10, in US dollars per million tokens.
+export const EMBEDDING_PRICE_PER_MILLION = 0.15;
+
+export function embeddingCostUsd(inputTokens: number): number {
+  return (inputTokens * EMBEDDING_PRICE_PER_MILLION) / 1_000_000;
+}

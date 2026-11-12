@@ -1,8 +1,14 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, Output, streamText } from "ai";
+import { embedMany, generateText, Output, streamText } from "ai";
 import type { z } from "zod";
-import { defaultModel, MODELS, type ModelId } from "@/lib/ai/models";
-import { costUsd } from "@/lib/ai/pricing";
+import {
+  defaultModel,
+  EMBEDDING_MODEL,
+  type EmbeddingModelId,
+  MODELS,
+  type ModelId,
+} from "@/lib/ai/models";
+import { costUsd, embeddingCostUsd } from "@/lib/ai/pricing";
 
 // Every model call in the app goes through this file, so each one is logged
 // with its tokens, cost and how long it took. The log goes to the terminal
@@ -36,7 +42,7 @@ type TextOptions = DistributiveOmit<
 export type AiCallRow = {
   module: number;
   feature: string;
-  model: ModelId;
+  model: ModelId | EmbeddingModelId;
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: number | null;
@@ -158,3 +164,57 @@ const THINKING = { includeThoughts: true, thinkingBudget: 1024 };
 export const THOUGHT_SUMMARIES = {
   google: { thinkingConfig: THINKING },
 };
+
+/**
+ * What the embeddings are for. Google tunes them slightly differently for the
+ * passages being searched (RETRIEVAL_DOCUMENT) and for a question searching
+ * them (RETRIEVAL_QUERY).
+ */
+export type EmbeddingTask = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
+
+/**
+ * Turns each text into an embedding (a list of numbers that captures its
+ * meaning), in as few requests as Google allows. Logged to ai_calls like
+ * every other call; embeddings only cost input tokens.
+ * Example: callEmbedMany({ module: 3, feature: "embed-docs" }, { values, task: "RETRIEVAL_DOCUMENT" })
+ */
+export async function callEmbedMany(
+  info: Omit<CallInfo, "model">,
+  options: { values: string[]; task: EmbeddingTask },
+) {
+  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  if (!googleKey) throw new AiNotConfiguredError();
+  const started = performance.now();
+  const row = (ok: boolean, tokens: number | null): AiCallRow => ({
+    module: info.module,
+    feature: info.feature,
+    model: EMBEDDING_MODEL.id,
+    input_tokens: tokens,
+    output_tokens: tokens === null ? null : 0,
+    cost_usd: tokens === null ? null : embeddingCostUsd(tokens),
+    latency_ms: Math.round(performance.now() - started),
+    ok,
+    created_at: new Date().toISOString(),
+  });
+  try {
+    const result = await embedMany({
+      model: createGoogleGenerativeAI({ apiKey: googleKey }).embedding(
+        EMBEDDING_MODEL.googleId,
+      ),
+      values: options.values,
+      providerOptions: {
+        google: {
+          outputDimensionality: EMBEDDING_MODEL.dimensions,
+          taskType: options.task,
+        },
+      },
+    });
+    // Google doesn't always report embedding tokens; log unknown, not 0.
+    const tokens = result.usage?.tokens;
+    await logCall(row(true, Number.isFinite(tokens) ? tokens : null));
+    return result;
+  } catch (error) {
+    await logCall(row(false, null));
+    throw error;
+  }
+}

@@ -5,3 +5,4 @@ next-env.d.ts
 docs
 specs
 AGENTS.md
+lib/copper/data/passages.json
