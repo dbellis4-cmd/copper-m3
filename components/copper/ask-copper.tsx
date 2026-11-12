@@ -1,6 +1,6 @@
 "use client";
 
-// Ask Copper: the floating shopping chat. Each answer is drawn as a rail of
+// Ask Copper: the floating shopping and support chat. Each answer is drawn as a rail of
 // stations (the tools on offer, Copper's thinking, each tool call with what
 // went in and what came back), then the reply, so shoppers can see how the
 // answer was worked out.
@@ -9,6 +9,8 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   BrainIcon,
+  ExternalLinkIcon,
+  FileTextIcon,
   MessageCircleIcon,
   TriangleAlertIcon,
   WrenchIcon,
@@ -148,7 +150,8 @@ export function AskCopper({ aiConfigured }: { aiConfigured: boolean }) {
                   Ask Copper
                 </SheetTitle>
                 <SheetDescription className="text-xs text-white/70">
-                  Prices, totals and stock, checked with tools.
+                  Prices, stock and help from Copper&apos;s guides, checked with
+                  tools.
                 </SheetDescription>
               </div>
               <SheetClose asChild>
@@ -225,7 +228,7 @@ export function AskCopper({ aiConfigured }: { aiConfigured: boolean }) {
                   aria-label="Your question"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Ask about prices or stock…"
+                  placeholder="Ask about prices, stock, setup or warranty…"
                   className="bg-background focus-visible:ring-ring h-10 flex-1 rounded-full border px-4 text-sm outline-none focus-visible:ring-2"
                 />
                 <Button
@@ -525,6 +528,40 @@ function ToolInput({ name, input }: { name: string; input: unknown }) {
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- tool outputs arrive untyped from the stream */
 function ToolOutput({ name, output }: { name: string; output: any }) {
+  if (name === "search_docs" && Array.isArray(output?.matches))
+    return output.matches.length === 0 ? (
+      <p className="text-xs">No matching passages.</p>
+    ) : (
+      <ol className="space-y-2 text-xs" data-testid="doc-matches">
+        {output.matches.map((m: any, i: number) => (
+          <li
+            key={`${m.link}-${i}`}
+            className="bg-background rounded-lg border p-2"
+          >
+            <div className="flex items-center gap-1.5">
+              <FileTextIcon className="text-accent size-3 shrink-0" />
+              <span className="font-semibold">{m.title}</span>
+              <span className="text-muted-foreground">· page {m.page}</span>
+              <span
+                className="text-muted-foreground ml-auto font-mono text-[10px]"
+                title="How close this passage is to the question (0 to 1)"
+              >
+                {Number(m.score).toFixed(2)}
+              </span>
+            </div>
+            <p className="text-muted-foreground mt-1 line-clamp-2">{m.text}</p>
+            <a
+              href={m.link}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent mt-1 inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+            >
+              Open page {m.page} <ExternalLinkIcon className="size-3" />
+            </a>
+          </li>
+        ))}
+      </ol>
+    );
   if (name === "calculate_cost" && output?.lines)
     return (
       <div className="text-xs">

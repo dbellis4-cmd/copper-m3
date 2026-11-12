@@ -112,8 +112,15 @@ meaning), so Ask Copper can later find the passages that answer a question.
 | Loader | `lib/copper/passage-index.ts`, `instrumentation.ts` | `getPassageIndex()` returns the passages from memory; `register()` loads them once when the server starts and logs `[passages] loaded N passages` |
 | AI calls | `callEmbedMany` in `lib/ai/call.ts`, `{ module: 3, feature: "embed-docs" }` | `gemini-embedding-001` at 768 dimensions, task `RETRIEVAL_DOCUMENT`. Run once per PDF change, not per question: about 7,500 input tokens for all four PDFs, about a tenth of a cent |
 
+| Search | `lib/copper/search.ts` | `searchDocs(query)`: embeds the question (task `RETRIEVAL_QUERY`), compares it with every passage by cosine similarity and returns the 5 closest with `title`, `page`, `link` (`/docs/<file>.pdf#page=N`), `score` and `text` |
+| Tool | `search_docs` in `lib/copper/assistant/tools.ts` | Ask Copper's fifth tool. The instructions send setup, troubleshooting, error-code, warranty, refund, subscription, privacy and policy questions to it, and tell Copper to answer only from the passages and name the document and page |
+| Tool card | `ToolOutput` in `components/copper/ask-copper.tsx` | Lists the 5 passages: title, page, score, a two-line excerpt and an "Open page N" link |
+| AI calls (search) | `{ module: 3, feature: "search-docs" }` | One embedding call per search (a few tokens), plus the usual `ask-copper` call |
+
 **Data flow:** `npm run embed-docs` → PDFs → passages → Gemini embeddings →
 `passages.json` (committed) → loaded into memory when the server starts.
+At question time: question → Ask Copper → `search_docs` → embed the question
+→ 5 closest passages → Copper answers from them, citing document and page.
 
 **Decisions and trade-offs:**
 - **A JSON file in memory, not a database.** About 100 passages fit easily in
@@ -130,4 +137,7 @@ meaning), so Ask Copper can later find the passages that answer a question.
 
 **Risks and open questions:** if a PDF changes and nobody re-runs
 `npm run embed-docs`, answers come from the old text. A passage can split a
-FAQ question from its answer when a page break falls between them.
+FAQ question from its answer when a page break falls between them. Embeddings match
+meaning, not exact words, so short codes like "C-47" score only a little
+above unrelated passages; adding keyword matching would make code lookups
+more reliable.
